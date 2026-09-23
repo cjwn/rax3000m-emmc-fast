@@ -1,0 +1,21 @@
+work/
+output/
+__pycache__/
+*.tar.gz
+
+# Local/private material: never package router backups or credentials
+.DS_Store
+.env
+.env.*
+!.env.example
+.ssh/
+id_rsa*
+id_ed25519*
+*.pem
+*.key
+backup/
+backups/
+*backup*.tar*
+*.img
+files/
+router-private/

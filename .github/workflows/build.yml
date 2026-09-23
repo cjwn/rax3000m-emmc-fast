@@ -1,0 +1,51 @@
+name: Build RAX3000M eMMC
+on:
+  workflow_dispatch:
+    inputs:
+      frequency:
+        description: eMMC frequency limit (MHz)
+        type: choice
+        options: ['26', '52']
+        default: '26'
+      mode:
+        description: highspeed or legacy baseline (legacy requires 26 MHz)
+        type: choice
+        options: [highspeed, legacy]
+        default: highspeed
+      accept_52mhz_risk:
+        description: I understand 52 MHz can cause I/O errors or boot failure
+        type: boolean
+        default: false
+permissions:
+  contents: read
+jobs:
+  firmware:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+      - name: Free space on disposable GitHub-hosted runner
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          df -h .
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang flex bison g++ gawk gcc-multilib g++-multilib gettext git libncurses-dev libssl-dev python3 python3-setuptools python3-pyelftools rsync swig unzip zlib1g-dev file wget curl ca-certificates time perl patch diffutils bzip2 xz-utils zstd libelf-dev
+      - name: Build
+        env:
+          FREQUENCY: ${{ inputs.frequency }}
+          MODE: ${{ inputs.mode }}
+          ACCEPT_RISK: ${{ inputs.accept_52mhz_risk }}
+        run: |
+          args=(--frequency "$FREQUENCY" --mode "$MODE" --jobs 2)
+          if [[ "$ACCEPT_RISK" == true ]]; then args+=(--accept-52mhz-risk); fi
+          bash ./build.sh "${args[@]}"
+      - name: Upload firmware and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rax3000m-24.10.2-${{ inputs.frequency }}-${{ inputs.mode }}
+          path: output/
+          if-no-files-found: warn
+          retention-days: 14
