@@ -59,8 +59,17 @@ if [[ ! -f .codex-feeds-ready ]]; then
   touch .codex-feeds-ready
 fi
 if [[ ! -f .config ]]; then cp "$kit/seed.config" .config; fi
+# TUN is required even when resuming a tree prepared with an older seed.
+python3 - <<'CONFIGPY'
+from pathlib import Path
+p = Path('.config')
+lines = [line for line in p.read_text().splitlines()
+         if not line.startswith('CONFIG_PACKAGE_kmod-tun=')
+         and line != '# CONFIG_PACKAGE_kmod-tun is not set']
+p.write_text('\n'.join(lines) + '\nCONFIG_PACKAGE_kmod-tun=y\n')
+CONFIGPY
 make defconfig
-for symbol in TARGET_mediatek_filogic_DEVICE_cmcc_rax3000m PACKAGE_luci PACKAGE_luci-app-ksmbd PACKAGE_ksmbd-server; do
+for symbol in TARGET_mediatek_filogic_DEVICE_cmcc_rax3000m PACKAGE_luci PACKAGE_luci-app-ksmbd PACKAGE_ksmbd-server PACKAGE_kmod-tun; do
   grep -qx "CONFIG_${symbol}=y" .config || { echo "Required config not selected: $symbol"; exit 1; }
 done
 if [[ $stage == prepare ]]; then
@@ -78,6 +87,19 @@ shopt -s nullglob
 firmware=("$images"/*cmcc_rax3000m-squashfs-sysupgrade.itb)
 ((${#firmware[@]} == 1)) || { echo 'Expected exactly one RAX3000M sysupgrade image'; exit 1; }
 cp "${firmware[0]}" "$out/"
+# Preserve installable modules and the real kernel configuration for ABI checks.
+mkdir -p "$out/kmods"
+tun_packages=("$images"/packages/kmod-tun_*.ipk)
+((${#tun_packages[@]} == 1)) || { echo 'Expected exactly one kmod-tun package'; exit 1; }
+for package in "$images"/packages/kmod-*.ipk; do
+  cp "$package" "$out/kmods/"
+done
+kernel_configs=(build_dir/target-*/linux-mediatek_filogic/linux-6.6.93/.config)
+((${#kernel_configs[@]} == 1)) || { echo 'Expected one kernel config'; exit 1; }
+cp "${kernel_configs[0]}" "$out/kernel.config"
+kernel_dir=${kernel_configs[0]%/.config}
+cp "$kernel_dir/.vermagic" "$out/kernel-abi.txt"
+grep -qx 'CONFIG_TUN=m' "$out/kernel.config" || { echo 'TUN must be compiled as a module'; exit 1; }
 cp .config "$out/full.config"
 ./scripts/diffconfig.sh > "$out/diffconfig"
 git diff -- target/linux/mediatek/dts/mt7981b-cmcc-rax3000m-emmc.dtso > "$out/emmc.patch"
@@ -86,5 +108,5 @@ printf 'source=%s\nfrequency=%s MHz\nmode=%s\n' "$commit" "$freq" "$mode" > "$ou
 for feed in packages luci routing telephony; do
   printf '%s=%s\n' "$feed" "$(git -C "feeds/$feed" rev-parse HEAD)" >> "$out/build-info.txt"
 done
-(cd "$out" && sha256sum ./*.itb > SHA256SUMS)
+(cd "$out" && sha256sum ./*.itb ./kmods/*.ipk > SHA256SUMS)
 echo "Build complete: $out (not flashed)"

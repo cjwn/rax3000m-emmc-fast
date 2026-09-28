@@ -19,3 +19,11 @@ backups/
 *.img
 files/
 router-private/
+
+RouterBackups/
+*.partial
+*.tar
+
+# Downloaded Actions outputs are local artifacts
+26-highspeed/
+52-highspeed/
